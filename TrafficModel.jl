@@ -4,6 +4,7 @@ module TrafficModel
 import CSV
 import Dates
 import DataFrames
+import Random
 
 # Data structure used to represent Cars
 # being in the various lanes.
@@ -138,7 +139,7 @@ function south_lane_taker()
   println("[South Lane Taker]: Ended")
 end
 
-function red_light_toggler()
+function red_light_toggler(east_west_lane_green_light_time, south_lane_green_light_time)
   println("[Red Light Toggler]: Started")
 
   # Callback functions to let the lane takers
@@ -155,7 +156,7 @@ function red_light_toggler()
       t1 = Timer(cb_1, 3, interval=TIME_BETWEEN_CARS)
       wait(t1)
       println("[Red Light Toggler]: East/West Lane Open")
-      sleep(5)
+      sleep(east_west_lane_green_light_time)
       
       close(t1)
       active_lane_num = 2
@@ -164,7 +165,7 @@ function red_light_toggler()
       wait(t2)
       println("[Red Light Toggler]: South Lane Open")
 
-      sleep(5)
+      sleep(south_lane_green_light_time)
       close(t2)
       active_lane_num = 1
     end
@@ -187,12 +188,12 @@ function red_light_toggler()
   println(south_df)
 end
 
-function east_lane_populator()
+function east_lane_populator(traffic_population_coefficient)
   println("[East Lane Populator]: Started")
   car_num = 1
   starttime = time()
   while time() < starttime + SIMULATION_DURATION
-    exec_time = rand() * 2
+    exec_time = rand() * traffic_population_coefficient
     sleep(exec_time)
     println("[East Lane Populator]: Spawning Car #$(car_num)")
     
@@ -203,12 +204,12 @@ function east_lane_populator()
   println("[East Lane Populator]: Ended")
 end
 
-function west_lane_populator()
+function west_lane_populator(traffic_population_coefficient)
   println("[West Lane Populator]: Started")
   car_num = 1
   starttime = time()
   while time() < starttime + SIMULATION_DURATION
-    exec_time = rand() * 2
+    exec_time = rand() * traffic_population_coefficient
     sleep(exec_time)
     println("[West Lane Populator]: Spawning Car #$(car_num)")
     
@@ -219,12 +220,12 @@ function west_lane_populator()
   println("[West Lane Populator]: Ended")
 end
 
-function south_lane_populator()
+function south_lane_populator(traffic_population_coefficient)
   println("[South Lane Populator]: Started")
   car_num = 1
   starttime = time()
   while time() < starttime + SIMULATION_DURATION
-    exec_time = rand() * 2
+    exec_time = rand() * traffic_population_coefficient
     sleep(exec_time)
     println("[South Lane Populator]: Spawning Car #$(car_num)")
     
@@ -241,11 +242,13 @@ end
 function simulation_runner()
   model_params = init_model_params()
 
-  @async red_light_toggler()
+  Random.seed!(model_params.rseed)
+
+  @async red_light_toggler(model_params.east_west_lane_green_light_time, model_params.south_lane_green_light_time)
   
-  @async south_lane_populator()
-  @async east_lane_populator()
-  @async west_lane_populator()
+  @async south_lane_populator(model_params.south_lane_population_coefficient)
+  @async east_lane_populator(model_params.east_lane_population_coefficient)
+  @async west_lane_populator(model_params.west_lane_population_coefficient)
 
   @async south_lane_taker()
   @async east_lane_taker()
