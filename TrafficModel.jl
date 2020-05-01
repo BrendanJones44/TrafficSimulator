@@ -7,12 +7,17 @@ import DataFrames
 mutable struct Car
   id::Int64
   lane_direction::String
-  time_entered_lane::Dates.DateTime
+  time_entered_lane::Float64
 end
 
 # Use data frame channels so that async
 # functions can read and write data to them.
-const data_frame_channel = Channel{DataFrames.DataFrame}(1)
+# NOTE: While the async functions could share one 
+# dataframe channel, when one is reading/writing to it
+# any other readers/writers are blocked. Therefore,
+# seperate channels are used to minimize latency/blocking
+const east_lane_data_channel = Channel{DataFrames.DataFrame}(1)
+const west_lane_data_channel = Channel{DataFrames.DataFrame}(1)
 
 # Use channels to store the cars in the traffic lane
 # waiting to get through the intersection.
@@ -27,12 +32,17 @@ const east_lane_open = Condition()
 const west_lane_open = Condition()
 
 # Durations of simulation in seconds
-const SIMULATION_DURATION = 60
+const SIMULATION_DURATION = 20
 
 # How long between red light switched
 # should no traffic be going through
 # the intersection in seconds
 const RED_LIGHT_LATENCY = 2
+
+# When the light turns green, how long should
+# it take for each car to accelerate and make
+# it through tht intersection
+const TIME_BETWEEN_CARS = 0.2
 
 function east_lane_taker()
   println("[East Lane Taker]: Started")
@@ -42,17 +52,19 @@ function east_lane_taker()
     # Wait until a green light for lane
     wait(east_lane_open)
 
-    # Remove the car 
+    # Remove the car and calculate time in lane
     car = take!(east_lane)
-    println("[East Lane Taker]: Taking $(car.id)")
+    time_car_was_taken = time()
+    elapsed_seconds = time_car_was_taken - car.time_entered_lane
+    println("[East Lane Taker]: Taking $(car.id). Elapsed time: $(elapsed_seconds)")
 
     # In order to read data asynschronously,
     # we make an atomic transic by taking the dataframe
     # from the channel, writing to it, and putting it
     # back in the channel
-    df = take!(data_frame_channel)
-    push!(df, car.id)
-    put!(data_frame_channel, df)
+    df = take!(east_lane_data_channel)
+    push!(df, [car.id, elapsed_seconds])
+    put!(east_lane_data_channel, df)
   end
 
   println("[East Lane Taker]: Ended")
@@ -66,17 +78,19 @@ function west_lane_taker()
     # Wait until a green light for lane
     wait(west_lane_open)
 
-    # Remove the car
+    # Remove the car and calculate time in lane
     car = take!(west_lane)
-    println("[West Lane Taker]: Taking $(car.id)")
+    time_car_was_taken = time()
+    elapsed_seconds = time_car_was_taken - car.time_entered_lane
+    println("[West Lane Taker]: Taking $(car.id). Elapsed time: $(elapsed_seconds)")
 
     # In order to read data asynschronously,
     # we make an atomic transic by taking the dataframe
     # from the channel, writing to it, and putting it
     # back in the channel
-    # df = take!(data_frame_channel)
-    # push!(df, car.id)
-    # put!(data_frame_channel, df)
+    df = take!(west_lane_data_channel)
+    push!(df, [car.id, elapsed_seconds])
+    put!(west_lane_data_channel, df)
   end
 
   println("[West Lane Taker]: Ended")
@@ -96,7 +110,7 @@ function toggle_red_light()
   starttime = time()
   while time() < starttime + SIMULATION_DURATION
     if active_lane_num == 1
-      t1 = Timer(cb_1, 3, interval=0.2)
+      t1 = Timer(cb_1, 3, interval=TIME_BETWEEN_CARS)
       wait(t1)
       println("[Red Light Toggler]: East Lane Open")
       sleep(5)
@@ -104,7 +118,7 @@ function toggle_red_light()
       close(t1)
       active_lane_num = 2
     else
-      t2 = Timer(cb_2, 3, interval=0.2)
+      t2 = Timer(cb_2, 3, interval=TIME_BETWEEN_CARS)
       wait(t2)
       println("[Red Light Toggler]: West Lane Open")
 
@@ -114,6 +128,17 @@ function toggle_red_light()
     end
   end
   println("[Red Light Toggler]: Ended")
+
+  # Give other functions 3 seconds to complete
+  sleep(3)
+
+  println("#### East Lane Data ####")
+  east_df = take!(east_lane_data_channel)
+  println(east_df)
+
+  println("#### West Lane Data ####")
+  west_df = take!(west_lane_data_channel)
+  println(west_df)
 end
 
 function east_lane_populator()
@@ -121,11 +146,11 @@ function east_lane_populator()
   car_num = 1
   starttime = time()
   while time() < starttime + SIMULATION_DURATION
-    exec_time = rand()
-    sleep(2)
+    exec_time = rand() * 2
+    sleep(exec_time)
     println("[East Lane Populator]: Spawning Car #$(car_num)")
     
-    spawned_car = Car(car_num, "East", Dates.now())
+    spawned_car = Car(car_num, "East", time())
     put!(east_lane, spawned_car)
     car_num += 1
   end
@@ -137,11 +162,11 @@ function west_lane_populator()
   car_num = 1
   starttime = time()
   while time() < starttime + SIMULATION_DURATION
-    exec_time = rand()
-    sleep(2)
+    exec_time = rand() * 2
+    sleep(exec_time)
     println("[West Lane Populator]: Spawning Car #$(car_num)")
     
-    spawned_car = Car(car_num, "West", Dates.now())
+    spawned_car = Car(car_num, "West", time())
     put!(west_lane, spawned_car)
     car_num += 1
   end
@@ -162,12 +187,14 @@ function simulation_runner()
 end
 
 function main()
-  data = DataFrames.DataFrame(car_id = Int64[])
+  east_lane_data = DataFrames.DataFrame(car_id = Int64[], duration_in_lane = Float64[])
+  west_lane_data = DataFrames.DataFrame(car_id = Int64[], duration_in_lane = Float64[])
 
-  # Initialize the data_frame_channel with
+  # Initialize the data frame channels with
   # an empty dataframe so it may be populated
   # when cars make it through the intersection
-  put!(data_frame_channel, data)
+  put!(east_lane_data_channel, east_lane_data)
+  put!(west_lane_data_channel, west_lane_data)
 
   sim_runner = @async simulation_runner()
 end
