@@ -49,7 +49,7 @@ const east_west_lanes_open = Condition()
 const south_lane_open = Condition()
 
 # Durations of simulation in seconds
-const SIMULATION_DURATION = 20
+const SIMULATION_DURATION = 600
 
 # How long between red light switched
 # should no traffic be going through
@@ -175,17 +175,14 @@ function red_light_toggler(east_west_lane_green_light_time, south_lane_green_lig
   # Give other functions 3 seconds to complete
   sleep(3)
 
-  println("#### East Lane Data ####")
   east_df = take!(east_lane_data_channel)
-  println(east_df)
+  CSV.write("east_data.csv", east_df)
 
-  println("#### West Lane Data ####")
   west_df = take!(west_lane_data_channel)
-  println(west_df)
+  CSV.write("west_data.csv", west_df)
 
-  println("#### South Lane Data ####")
   south_df = take!(south_lane_data_channel)
-  println(south_df)
+  CSV.write("south_data.csv", south_df)
 end
 
 function east_lane_populator(traffic_population_coefficient)
@@ -260,11 +257,11 @@ end
 function init_model_params()
   ModelParams(
     1, # rseed
-    2, # east_lane_population_coefficient
-    2, # west_lane_population_coefficient
-    2, # south_lane_population_coefficient
-    5, # east_west_lane_green_light_time,
-    5  # south_lane_green_light_time
+    1, # east_lane_population_coefficient
+    1, # west_lane_population_coefficient
+    4, # south_lane_population_coefficient
+    80, # east_west_lane_green_light_time,
+    20  # south_lane_green_light_time
   )
 end
 
