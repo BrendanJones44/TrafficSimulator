@@ -1,0 +1,8 @@
+ModelParams(
+    1, # rseed
+    1, # east_lane_population_coefficient
+    1, # west_lane_population_coefficient
+    1, # south_lane_population_coefficient
+    80, # east_west_lane_green_light_time,
+    80  # south_lane_green_light_time
+  )
